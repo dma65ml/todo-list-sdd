@@ -26,7 +26,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
   return (
     <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
       {tasks.map((task) => (
-        <TaskItem key={task.id} title={task.title} completed={task.completed} />
+        <TaskItem key={task.id} id={task.id} title={task.title} completed={task.completed} />
       ))}
     </div>
   );

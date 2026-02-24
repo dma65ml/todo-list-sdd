@@ -35,3 +35,21 @@ export async function addTask(formData: FormData) {
     return { error: 'Une erreur est survenue lors de l\'ajout de la tâche' };
   }
 }
+
+/**
+ * Action serveur pour basculer le statut d'une tâche.
+ */
+export async function toggleTaskStatus(id: string, completed: boolean) {
+  try {
+    await prisma.task.update({
+      where: { id },
+      data: { completed },
+    });
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de la mise à jour du statut:', e);
+    return { error: 'Impossible de mettre à jour le statut' };
+  }
+}

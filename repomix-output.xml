@@ -101,12 +101,22 @@ openspec/
         design.md
         proposal.md
         tasks.md
+      2026-02-24-update-task-status/
+        specs/
+          task-status-update/
+            spec.md
+        .openspec.yaml
+        design.md
+        proposal.md
+        tasks.md
   specs/
     task-creation/
       spec.md
     task-list-view/
       spec.md
     task-model/
+      spec.md
+    task-status-update/
       spec.md
   config.yaml
 prisma/
@@ -126,6 +136,7 @@ public/
 scripts/
   verify-add-task.ts
   verify-task-model.ts
+  verify-toggle-status.ts
 src/
   app/
     favicon.ico
@@ -158,320 +169,197 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="openspec/changes/archive/2026-02-24-add-task/specs/task-creation/spec.md">
+<file path="openspec/changes/archive/2026-02-24-update-task-status/specs/task-status-update/spec.md">
 ## ADDED Requirements
 
-### Requirement: Formulaire d'ajout
-Le système SHALL proposer un champ de saisie textuelle et un bouton "Ajouter" pour créer une nouvelle tâche.
+### Requirement: Modification du statut
+Le système SHALL permettre à l'utilisateur de modifier le statut d'une tâche en cliquant sur sa case à cocher.
 
-#### Scenario: Ajout réussi d'une tâche avec titre valide
-- **WHEN** l'utilisateur saisit un titre valide et clique sur "Ajouter"
-- **THEN** une nouvelle tâche est créée en base, apparaît dans la liste, et le champ est vidé
+#### Scenario: Marquer une tâche comme faite
+- **WHEN** l'utilisateur coche la case d'une tâche "à faire"
+- **THEN** la case devient cochée, le titre est barré, et le statut est mis à jour à `true` en base de données.
 
-### Requirement: Validation du titre à l'ajout
-Le titre d'une tâche SHALL être obligatoire, non vide (après trim), et ne pas dépasser 200 caractères.
+#### Scenario: Remettre une tâche à faire
+- **WHEN** l'utilisateur décoche la case d'une tâche "faite"
+- **THEN** la case devient décochée, le titre n'est plus barré, et le statut est mis à jour à `false` en base de données.
 
-#### Scenario: Titre vide ou espaces
-- **WHEN** l'utilisateur tente d'ajouter une tâche avec un titre vide ou composé uniquement d'espaces
-- **THEN** un message d'erreur "Le titre ne peut pas être vide" est affiché et aucune tâche n'est créée
+### Requirement: Persistance du statut
+Le changement de statut SHALL être persistant entre les rechargements de page.
 
-#### Scenario: Titre trop long
-- **WHEN** l'utilisateur saisit un titre de plus de 200 caractères
-- **THEN** un message d'erreur "Le titre ne doit pas dépasser 200 caractères" est affiché
+#### Scenario: Vérification de la persistance après rechargement
+- **WHEN** l'utilisateur modifie le statut d'une tâche et recharge la page
+- **THEN** la tâche conserve son nouveau statut dans l'interface.
 
-### Requirement: Mise à jour instantanée
-L'interface SHALL se mettre à jour pour inclure la nouvelle tâche sans rechargement complet de la page.
+### Requirement: Mise à jour sans rechargement
+L'interface SHALL refléter le changement de statut immédiatement sans nécessiter un rechargement complet de la page.
 
-#### Scenario: Mise à jour de la liste sans rechargement
-- **WHEN** une tâche est ajoutée avec succès
-- **THEN** la liste est rafraîchie immédiatement pour inclure le nouvel élément
+#### Scenario: Modification multiple
+- **WHEN** l'utilisateur modifie plusieurs tâches séquentiellement
+- **THEN** chaque modification est appliquée et persistée sans flash de rechargement de page.
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-add-task/.openspec.yaml">
+<file path="openspec/changes/archive/2026-02-24-update-task-status/.openspec.yaml">
 schema: spec-driven
 created: 2026-02-24
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-add-task/design.md">
+<file path="openspec/changes/archive/2026-02-24-update-task-status/design.md">
 ## Context
 
-Le système affiche actuellement une liste de tâches récupérée via Prisma. Nous devons ajouter la possibilité de créer de nouvelles tâches directement depuis l'interface utilisateur.
+Le système affiche une liste de tâches et permet d'en ajouter de nouvelles. Nous devons maintenant permettre la modification du statut "completed" des tâches existantes.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Fournir un formulaire d'ajout simple.
-- Assurer la persistence des données dans SQLite.
-- Gérer les validations (titre requis, non vide, max 200).
-- Mettre à jour la liste sans rechargement complet de la page.
+- Permettre de basculer le statut d'une tâche (fait/à faire) via la case à cocher.
+- Persister le changement en base de données.
+- Assurer une mise à jour fluide de l'UI (sans rechargement de page).
 
 **Non-Goals:**
-- Édition ou suppression de tâches.
-- Priorisation ou catégories de tâches.
+- Éditer le titre de la tâche dans cette phase.
+- Supprimer une tâche.
 
 ## Decisions
 
-- **Server Actions (Next.js)**: Utilisation de `use server` pour gérer la création de tâches. C'est le pattern standard et idiomatique pour Next.js App Router.
-- **Formulaire Client**: Utilisation de `useFormStatus` ou d'un simple état React pour gérer le vidage du champ après succès.
-- **Revalidation**: Utilisation de `revalidatePath('/')` après l'ajout pour forcer Next.js à rafraîchir les données de la page sans rechargement complet (SPA-like update).
-- **Gestion d'Erreur**: Affichage d'un message d'erreur sous le champ en cas d'échec de validation (client ou serveur).
+- **Server Action**: Utilisation d'une action serveur `toggleTaskStatus(id: string, completed: boolean)` pour mettre à jour la base de données.
+- **useTransition**: Utilisation du hook `useTransition` dans le composant client `TaskItem` pour gérer le changement de statut de manière asynchrone tout en gardant l'UI réactive.
+- **Revalidation**: Utilisation de `revalidatePath('/')` côté serveur après la mise à jour Prisma pour synchroniser tous les composants.
+- **Stylage conditionnel**: Utilisation de classes Tailwind (`line-through`, `text-gray-400`) basées sur la prop `completed`.
 
 ## Risks / Trade-offs
 
-- **UX**: Sans optimisme UI (optimistic updates), il y a un léger délai entre le clic et l'apparition de la tâche. [Mitigation] -> Pour ce MVP, une revalidation simple suffit, l'optimisme pourra être ajouté plus tard si nécessaire.
+- **Latence réseau**: [Risk] -> Un délai peut apparaître entre le clic et la mise à jour si la connexion est lente. [Mitigation] -> L'utilisation de `useTransition` permet d'afficher un état de chargement ou de garder l'interaction fluide. L'optimisme UI (Optimistic UI) pourrait être envisagé si la latence devient un problème majeur.
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-add-task/proposal.md">
+<file path="openspec/changes/archive/2026-02-24-update-task-status/proposal.md">
 ## Why
 
-L'utilisateur doit pouvoir ajouter de nouvelles tâches à sa liste de manière simple et intuitive pour organiser son travail. Actuellement, la liste est statique (initialisée par seed).
+L'utilisateur doit pouvoir marquer une tâche comme terminée ou la remettre à faire pour suivre l'avancement de ses activités. Actuellement, le statut est statique après la création.
 
 ## What Changes
 
-- Ajout d'un formulaire de saisie (champ texte et bouton) sur la page principale.
-- Mise en œuvre d'une action serveur (Server Action) pour la création de tâches dans la base de données.
-- Validation des données côté client et côté serveur (titre obligatoire, non vide, max 200 caractères).
-- Mise à jour instantanée de l'interface utilisateur après l'ajout.
+- Possibilité de cliquer sur la case à cocher d'une tâche pour basculer son statut.
+- Mise en œuvre d'une action serveur (Server Action) pour mettre à jour le statut dans la base de données SQLite via Prisma.
+- Mise à jour instantanée de l'interface utilisateur sans rechargement de page.
+- Persistance du statut entre les sessions.
 
 ## Capabilities
 
 ### New Capabilities
-- `task-creation`: Gère la saisie, la validation et la persistance des nouvelles tâches.
+- `task-status-update`: Gère le basculement du statut "completed" d'une tâche, sa persistance et le retour visuel immédiat.
 
 ### Modified Capabilities
 <!-- Aucun -->
 
 ## Impact
 
-- Frontend (composant de formulaire).
+- Frontend (Composant TaskItem).
 - Actions serveur Next.js.
-- Validation Prisma/Applicative.
+- Base de données SQLite (mise à jour via Prisma).
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-add-task/tasks.md">
+<file path="openspec/changes/archive/2026-02-24-update-task-status/tasks.md">
 ## 1. Action Serveur
 
-- [x] 1.1 Créer l'action serveur `addTask` (src/lib/actions.ts) avec validation du titre
-- [x] 1.2 Implémenter la création Prisma et `revalidatePath('/')`
+- [x] 1.1 Créer l'action serveur `toggleTaskStatus` dans `src/lib/actions.ts`
+- [x] 1.2 Implémenter la mise à jour Prisma et `revalidatePath('/')`
 
-## 2. Composant Formulaire
+## 2. Composants UI
 
-- [x] 2.1 Créer le composant `AddTaskForm` (client component)
-- [x] 2.2 Gérer l'état local du champ, les erreurs et le chargement
+- [x] 2.1 Transformer `TaskItem` en composant client (`'use client'`)
+- [x] 2.2 Ajouter le hook `useTransition` pour gérer le changement de statut
+- [x] 2.3 Connecter l'input checkbox à l'action `toggleTaskStatus`
+- [x] 2.4 Vérifier le stylage conditionnel (titre barré)
 
-## 3. Intégration
+## 3. Vérification
 
-- [x] 3.1 Ajouter `AddTaskForm` dans la page principale (`src/app/page.tsx`)
-- [x] 3.2 Vérifier le style et la cohérence visuelle avec Tailwind
-
-## 4. Validation
-
-- [x] 4.1 Tester l'ajout d'une tâche valide
-- [x] 4.2 Tester les cas d'erreur (vide, espaces, trop long)
+- [x] 3.1 Tester le basculement du statut sur plusieurs tâches
+- [x] 3.2 Vérifier la persistance après rechargement de la page
+- [x] 3.3 S'assurer qu'aucun rechargement de page visible ne se produit
 </file>
 
-<file path="openspec/specs/task-creation/spec.md">
-# Capability: task-creation
+<file path="openspec/specs/task-status-update/spec.md">
+# Capability: task-status-update
 
 ## Purpose
-Définit les mécanismes et règles pour la création de nouvelles tâches dans le système.
+Définit les règles et comportements pour la modification du statut de complétion d'une tâche.
 
 ## Requirements
 
-### Requirement: Formulaire d'ajout
-Le système SHALL proposer un champ de saisie textuelle et un bouton "Ajouter" pour créer une nouvelle tâche.
+### Requirement: Modification du statut
+Le système SHALL permettre à l'utilisateur de modifier le statut d'une tâche en cliquant sur sa case à cocher.
 
-#### Scenario: Ajout réussi d'une tâche avec titre valide
-- **WHEN** l'utilisateur saisit un titre valide et clique sur "Ajouter"
-- **THEN** une nouvelle tâche est créée en base, apparaît dans la liste, et le champ est vidé
+#### Scenario: Marquer une tâche comme faite
+- **WHEN** l'utilisateur coche la case d'une tâche "à faire"
+- **THEN** la case devient cochée, le titre est barré, et le statut est mis à jour à `true` en base de données.
 
-### Requirement: Validation du titre à l'ajout
-Le titre d'une tâche SHALL être obligatoire, non vide (après trim), et ne pas dépasser 200 caractères.
+#### Scenario: Remettre une tâche à faire
+- **WHEN** l'utilisateur décoche la case d'une tâche "faite"
+- **THEN** la case devient décochée, le titre n'est plus barré, et le statut est mis à jour à `false` en base de données.
 
-#### Scenario: Titre vide ou espaces
-- **WHEN** l'utilisateur tente d'ajouter une tâche avec un titre vide ou composé uniquement d'espaces
-- **THEN** un message d'erreur "Le titre ne peut pas être vide" est affiché et aucune tâche n'est créée
+### Requirement: Persistance du statut
+Le changement de statut SHALL être persistant entre les rechargements de page.
 
-#### Scenario: Titre trop long
-- **WHEN** l'utilisateur saisit un titre de plus de 200 caractères
-- **THEN** un message d'erreur "Le titre ne doit pas dépasser 200 caractères" est affiché
+#### Scenario: Vérification de la persistance après rechargement
+- **WHEN** l'utilisateur modifie le statut d'une tâche et recharge la page
+- **THEN** la tâche conserve son nouveau statut dans l'interface.
 
-### Requirement: Mise à jour instantanée
-L'interface SHALL se mettre à jour pour inclure la nouvelle tâche sans rechargement complet de la page.
+### Requirement: Mise à jour sans rechargement
+L'interface SHALL refléter le changement de statut immédiatement sans nécessiter un rechargement complet de la page.
 
-#### Scenario: Mise à jour de la liste sans rechargement
-- **WHEN** une tâche est ajoutée avec succès
-- **THEN** la liste est rafraîchie immédiatement pour inclure le nouvel élément
+#### Scenario: Modification multiple
+- **WHEN** l'utilisateur modifie plusieurs tâches séquentiellement
+- **THEN** chaque modification est appliquée et persistée sans flash de rechargement de page.
 </file>
 
-<file path="scripts/verify-add-task.ts">
+<file path="scripts/verify-toggle-status.ts">
 import 'dotenv/config';
 import prisma from '../src/lib/prisma';
 
-async function verifyAddTask() {
-  console.log('--- Vérification de la création de tâche ---');
+async function verifyToggleStatus() {
+  console.log('--- Vérification de la modification du statut ---');
 
-  const testTitle = 'Tâche de test ' + Date.now();
+  // 1. Trouver une tâche existante
+  const tasks = await prisma.task.findMany({ take: 1 });
+  if (tasks.length === 0) {
+    throw new Error('Aucune tâche trouvée pour le test. Lancez le seed.');
+  }
 
-  // Test 1: Création valide
-  console.log(`Test 1: Création d'une tâche avec le titre "${testTitle}"`);
-  const task = await prisma.task.create({
-    data: {
-      title: testTitle,
-      completed: false,
-    },
+  const task = tasks[0];
+  const originalStatus = task.completed;
+  const targetStatus = !originalStatus;
+
+  console.log(`Tâche cible: "${task.title}" (ID: ${task.id})`);
+  console.log(`Statut original: ${originalStatus} -> Cible: ${targetStatus}`);
+
+  // 2. Simuler la mise à jour (comme dans l'action toggleTaskStatus)
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { completed: targetStatus },
   });
 
-  if (task.title === testTitle) {
-    console.log('✓ Tâche créée avec succès en base de données');
+  // 3. Vérifier en base
+  const updatedTask = await prisma.task.findUnique({ where: { id: task.id } });
+  
+  if (updatedTask?.completed === targetStatus) {
+    console.log('✓ Statut mis à jour avec succès en base de données');
   } else {
-    throw new Error('✗ Le titre de la tâche ne correspond pas');
+    throw new Error('✗ Échec de la mise à jour du statut en base');
   }
 
-  // Test 2: Validation (Simulation de la logique de l'action)
-  console.log('Test 2: Validation titre vide');
-  const validate = (t: string) => {
-    if (!t || t.trim().length === 0) return 'Le titre ne peut pas être vide';
-    if (t.length > 200) return 'Le titre ne doit pas dépasser 200 caractères';
-    return null;
-  };
-
-  const emptyError = validate('   ');
-  if (emptyError === 'Le titre ne peut pas être vide') {
-    console.log('✓ Validation titre vide OK');
-  } else {
-    throw new Error('✗ Validation titre vide en échec');
-  }
-
-  console.log('Test 3: Validation titre trop long');
-  const longTitle = 'a'.repeat(201);
-  const longError = validate(longTitle);
-  if (longError === 'Le titre ne doit pas dépasser 200 caractères') {
-    console.log('✓ Validation titre trop long OK');
-  } else {
-    throw new Error('✗ Validation titre trop long en échec');
-  }
+  // 4. Remettre le statut original (nettoyage optionnel)
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { completed: originalStatus },
+  });
+  console.log('✓ Statut original restauré');
 
   console.log('--- Toutes les vérifications sont terminées ---');
 }
 
-verifyAddTask()
+verifyToggleStatus()
   .catch(console.error)
   .finally(() => prisma.$disconnect());
-</file>
-
-<file path="src/components/AddTaskForm.tsx">
-'use client';
-
-import React, { useState } from 'react';
-import { addTask } from '@/lib/actions';
-
-/**
- * Composant de formulaire pour l'ajout d'une tâche.
- * Gère l'état de saisie, les messages d'erreur et l'appel à l'action serveur.
- */
-const AddTaskForm: React.FC = () => {
-  const [title, setTitle] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    // Validation basique côté client
-    if (!title || title.trim().length === 0) {
-      setError('Le titre ne peut pas être vide');
-      return;
-    }
-
-    if (title.length > 200) {
-      setError('Le titre ne doit pas dépasser 200 caractères');
-      return;
-    }
-
-    setIsPending(true);
-    const formData = new FormData();
-    formData.append('title', title);
-
-    const result = await addTask(formData);
-
-    if (result?.error) {
-      setError(result.error);
-    } else {
-      setTitle(''); // Vide le champ après succès
-    }
-    setIsPending(false);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="mb-8">
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ajouter une tâche..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-            disabled={isPending}
-            maxLength={201}
-          />
-          <button
-            type="submit"
-            disabled={isPending}
-            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-300 transition-colors"
-          >
-            {isPending ? 'Ajout...' : 'Ajouter'}
-          </button>
-        </div>
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-      </div>
-    </form>
-  );
-};
-
-export default AddTaskForm;
-</file>
-
-<file path="src/lib/actions.ts">
-'use server';
-
-import prisma from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
-
-/**
- * Action serveur pour ajouter une nouvelle tâche.
- * Valide le titre et persiste la tâche en base de données.
- */
-export async function addTask(formData: FormData) {
-  const title = formData.get('title') as string;
-
-  // Validation
-  if (!title || title.trim().length === 0) {
-    return { error: 'Le titre ne peut pas être vide' };
-  }
-
-  if (title.length > 200) {
-    return { error: 'Le titre ne doit pas dépasser 200 caractères' };
-  }
-
-  try {
-    await prisma.task.create({
-      data: {
-        title: title.trim(),
-        completed: false,
-      },
-    });
-
-    // Déclenche la revalidation de la page principale pour mettre à jour la liste
-    revalidatePath('/');
-    return { success: true };
-  } catch (e) {
-    console.error('Erreur lors de l\'ajout de la tâche:', e);
-    return { error: 'Une erreur est survenue lors de l\'ajout de la tâche' };
-  }
-}
 </file>
 
 <file path=".opencode/command/opsx-apply.md">
@@ -4263,6 +4151,118 @@ Use clear markdown with:
 - No vague suggestions like "consider reviewing"
 </file>
 
+<file path="openspec/changes/archive/2026-02-24-add-task/specs/task-creation/spec.md">
+## ADDED Requirements
+
+### Requirement: Formulaire d'ajout
+Le système SHALL proposer un champ de saisie textuelle et un bouton "Ajouter" pour créer une nouvelle tâche.
+
+#### Scenario: Ajout réussi d'une tâche avec titre valide
+- **WHEN** l'utilisateur saisit un titre valide et clique sur "Ajouter"
+- **THEN** une nouvelle tâche est créée en base, apparaît dans la liste, et le champ est vidé
+
+### Requirement: Validation du titre à l'ajout
+Le titre d'une tâche SHALL être obligatoire, non vide (après trim), et ne pas dépasser 200 caractères.
+
+#### Scenario: Titre vide ou espaces
+- **WHEN** l'utilisateur tente d'ajouter une tâche avec un titre vide ou composé uniquement d'espaces
+- **THEN** un message d'erreur "Le titre ne peut pas être vide" est affiché et aucune tâche n'est créée
+
+#### Scenario: Titre trop long
+- **WHEN** l'utilisateur saisit un titre de plus de 200 caractères
+- **THEN** un message d'erreur "Le titre ne doit pas dépasser 200 caractères" est affiché
+
+### Requirement: Mise à jour instantanée
+L'interface SHALL se mettre à jour pour inclure la nouvelle tâche sans rechargement complet de la page.
+
+#### Scenario: Mise à jour de la liste sans rechargement
+- **WHEN** une tâche est ajoutée avec succès
+- **THEN** la liste est rafraîchie immédiatement pour inclure le nouvel élément
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-add-task/.openspec.yaml">
+schema: spec-driven
+created: 2026-02-24
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-add-task/design.md">
+## Context
+
+Le système affiche actuellement une liste de tâches récupérée via Prisma. Nous devons ajouter la possibilité de créer de nouvelles tâches directement depuis l'interface utilisateur.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Fournir un formulaire d'ajout simple.
+- Assurer la persistence des données dans SQLite.
+- Gérer les validations (titre requis, non vide, max 200).
+- Mettre à jour la liste sans rechargement complet de la page.
+
+**Non-Goals:**
+- Édition ou suppression de tâches.
+- Priorisation ou catégories de tâches.
+
+## Decisions
+
+- **Server Actions (Next.js)**: Utilisation de `use server` pour gérer la création de tâches. C'est le pattern standard et idiomatique pour Next.js App Router.
+- **Formulaire Client**: Utilisation de `useFormStatus` ou d'un simple état React pour gérer le vidage du champ après succès.
+- **Revalidation**: Utilisation de `revalidatePath('/')` après l'ajout pour forcer Next.js à rafraîchir les données de la page sans rechargement complet (SPA-like update).
+- **Gestion d'Erreur**: Affichage d'un message d'erreur sous le champ en cas d'échec de validation (client ou serveur).
+
+## Risks / Trade-offs
+
+- **UX**: Sans optimisme UI (optimistic updates), il y a un léger délai entre le clic et l'apparition de la tâche. [Mitigation] -> Pour ce MVP, une revalidation simple suffit, l'optimisme pourra être ajouté plus tard si nécessaire.
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-add-task/proposal.md">
+## Why
+
+L'utilisateur doit pouvoir ajouter de nouvelles tâches à sa liste de manière simple et intuitive pour organiser son travail. Actuellement, la liste est statique (initialisée par seed).
+
+## What Changes
+
+- Ajout d'un formulaire de saisie (champ texte et bouton) sur la page principale.
+- Mise en œuvre d'une action serveur (Server Action) pour la création de tâches dans la base de données.
+- Validation des données côté client et côté serveur (titre obligatoire, non vide, max 200 caractères).
+- Mise à jour instantanée de l'interface utilisateur après l'ajout.
+
+## Capabilities
+
+### New Capabilities
+- `task-creation`: Gère la saisie, la validation et la persistance des nouvelles tâches.
+
+### Modified Capabilities
+<!-- Aucun -->
+
+## Impact
+
+- Frontend (composant de formulaire).
+- Actions serveur Next.js.
+- Validation Prisma/Applicative.
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-add-task/tasks.md">
+## 1. Action Serveur
+
+- [x] 1.1 Créer l'action serveur `addTask` (src/lib/actions.ts) avec validation du titre
+- [x] 1.2 Implémenter la création Prisma et `revalidatePath('/')`
+
+## 2. Composant Formulaire
+
+- [x] 2.1 Créer le composant `AddTaskForm` (client component)
+- [x] 2.2 Gérer l'état local du champ, les erreurs et le chargement
+
+## 3. Intégration
+
+- [x] 3.1 Ajouter `AddTaskForm` dans la page principale (`src/app/page.tsx`)
+- [x] 3.2 Vérifier le style et la cohérence visuelle avec Tailwind
+
+## 4. Validation
+
+- [x] 4.1 Tester l'ajout d'une tâche valide
+- [x] 4.2 Tester les cas d'erreur (vide, espaces, trop long)
+</file>
+
 <file path="openspec/changes/archive/2026-02-24-task-data-model/specs/task-model/spec.md">
 ## ADDED Requirements
 
@@ -4484,6 +4484,40 @@ L'utilisateur a besoin de visualiser ses tâches pour suivre l'avancement de son
 - [x] 4.2 Vérifier le message de liste vide en supprimant temporairement les tâches
 </file>
 
+<file path="openspec/specs/task-creation/spec.md">
+# Capability: task-creation
+
+## Purpose
+Définit les mécanismes et règles pour la création de nouvelles tâches dans le système.
+
+## Requirements
+
+### Requirement: Formulaire d'ajout
+Le système SHALL proposer un champ de saisie textuelle et un bouton "Ajouter" pour créer une nouvelle tâche.
+
+#### Scenario: Ajout réussi d'une tâche avec titre valide
+- **WHEN** l'utilisateur saisit un titre valide et clique sur "Ajouter"
+- **THEN** une nouvelle tâche est créée en base, apparaît dans la liste, et le champ est vidé
+
+### Requirement: Validation du titre à l'ajout
+Le titre d'une tâche SHALL être obligatoire, non vide (après trim), et ne pas dépasser 200 caractères.
+
+#### Scenario: Titre vide ou espaces
+- **WHEN** l'utilisateur tente d'ajouter une tâche avec un titre vide ou composé uniquement d'espaces
+- **THEN** un message d'erreur "Le titre ne peut pas être vide" est affiché et aucune tâche n'est créée
+
+#### Scenario: Titre trop long
+- **WHEN** l'utilisateur saisit un titre de plus de 200 caractères
+- **THEN** un message d'erreur "Le titre ne doit pas dépasser 200 caractères" est affiché
+
+### Requirement: Mise à jour instantanée
+L'interface SHALL se mettre à jour pour inclure la nouvelle tâche sans rechargement complet de la page.
+
+#### Scenario: Mise à jour de la liste sans rechargement
+- **WHEN** une tâche est ajoutée avec succès
+- **THEN** la liste est rafraîchie immédiatement pour inclure le nouvel élément
+</file>
+
 <file path="openspec/specs/task-list-view/spec.md">
 # Capability: task-list-view
 
@@ -4668,6 +4702,62 @@ main()
 <svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
 </file>
 
+<file path="scripts/verify-add-task.ts">
+import 'dotenv/config';
+import prisma from '../src/lib/prisma';
+
+async function verifyAddTask() {
+  console.log('--- Vérification de la création de tâche ---');
+
+  const testTitle = 'Tâche de test ' + Date.now();
+
+  // Test 1: Création valide
+  console.log(`Test 1: Création d'une tâche avec le titre "${testTitle}"`);
+  const task = await prisma.task.create({
+    data: {
+      title: testTitle,
+      completed: false,
+    },
+  });
+
+  if (task.title === testTitle) {
+    console.log('✓ Tâche créée avec succès en base de données');
+  } else {
+    throw new Error('✗ Le titre de la tâche ne correspond pas');
+  }
+
+  // Test 2: Validation (Simulation de la logique de l'action)
+  console.log('Test 2: Validation titre vide');
+  const validate = (t: string) => {
+    if (!t || t.trim().length === 0) return 'Le titre ne peut pas être vide';
+    if (t.length > 200) return 'Le titre ne doit pas dépasser 200 caractères';
+    return null;
+  };
+
+  const emptyError = validate('   ');
+  if (emptyError === 'Le titre ne peut pas être vide') {
+    console.log('✓ Validation titre vide OK');
+  } else {
+    throw new Error('✗ Validation titre vide en échec');
+  }
+
+  console.log('Test 3: Validation titre trop long');
+  const longTitle = 'a'.repeat(201);
+  const longError = validate(longTitle);
+  if (longError === 'Le titre ne doit pas dépasser 200 caractères') {
+    console.log('✓ Validation titre trop long OK');
+  } else {
+    throw new Error('✗ Validation titre trop long en échec');
+  }
+
+  console.log('--- Toutes les vérifications sont terminées ---');
+}
+
+verifyAddTask()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());
+</file>
+
 <file path="scripts/verify-task-model.ts">
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
@@ -4806,25 +4896,113 @@ export default function RootLayout({
 }
 </file>
 
+<file path="src/components/AddTaskForm.tsx">
+'use client';
+
+import React, { useState } from 'react';
+import { addTask } from '@/lib/actions';
+
+/**
+ * Composant de formulaire pour l'ajout d'une tâche.
+ * Gère l'état de saisie, les messages d'erreur et l'appel à l'action serveur.
+ */
+const AddTaskForm: React.FC = () => {
+  const [title, setTitle] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    // Validation basique côté client
+    if (!title || title.trim().length === 0) {
+      setError('Le titre ne peut pas être vide');
+      return;
+    }
+
+    if (title.length > 200) {
+      setError('Le titre ne doit pas dépasser 200 caractères');
+      return;
+    }
+
+    setIsPending(true);
+    const formData = new FormData();
+    formData.append('title', title);
+
+    const result = await addTask(formData);
+
+    if (result?.error) {
+      setError(result.error);
+    } else {
+      setTitle(''); // Vide le champ après succès
+    }
+    setIsPending(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-8">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Ajouter une tâche..."
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+            disabled={isPending}
+            maxLength={201}
+          />
+          <button
+            type="submit"
+            disabled={isPending}
+            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-300 transition-colors"
+          >
+            {isPending ? 'Ajout...' : 'Ajouter'}
+          </button>
+        </div>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+      </div>
+    </form>
+  );
+};
+
+export default AddTaskForm;
+</file>
+
 <file path="src/components/TaskItem.tsx">
-import React from 'react';
+'use client';
+
+import React, { useTransition } from 'react';
+import { toggleTaskStatus } from '@/lib/actions';
 
 interface TaskItemProps {
+  id: string;
   title: string;
   completed: boolean;
 }
 
 /**
  * Composant représentant un élément de la liste de tâches.
+ * Gère le basculement du statut via une Server Action.
  */
-const TaskItem: React.FC<TaskItemProps> = ({ title, completed }) => {
+const TaskItem: React.FC<TaskItemProps> = ({ id, title, completed }) => {
+  const [isPending, startTransition] = useTransition();
+
+  const handleToggle = () => {
+    startTransition(async () => {
+      await toggleTaskStatus(id, !completed);
+    });
+  };
+
   return (
-    <div className="flex items-center gap-3 p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors">
+    <div className={`flex items-center gap-3 p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${isPending ? 'opacity-50' : ''}`}>
       <input
         type="checkbox"
         checked={completed}
-        readOnly
-        className="w-5 h-5 cursor-default accent-blue-600"
+        onChange={handleToggle}
+        disabled={isPending}
+        className="w-5 h-5 cursor-pointer accent-blue-600 disabled:cursor-not-allowed"
       />
       <span className={`text-lg ${completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
         {title}
@@ -4865,13 +5043,71 @@ const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
   return (
     <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
       {tasks.map((task) => (
-        <TaskItem key={task.id} title={task.title} completed={task.completed} />
+        <TaskItem key={task.id} id={task.id} title={task.title} completed={task.completed} />
       ))}
     </div>
   );
 };
 
 export default TaskList;
+</file>
+
+<file path="src/lib/actions.ts">
+'use server';
+
+import prisma from '@/lib/prisma';
+import { revalidatePath } from 'next/cache';
+
+/**
+ * Action serveur pour ajouter une nouvelle tâche.
+ * Valide le titre et persiste la tâche en base de données.
+ */
+export async function addTask(formData: FormData) {
+  const title = formData.get('title') as string;
+
+  // Validation
+  if (!title || title.trim().length === 0) {
+    return { error: 'Le titre ne peut pas être vide' };
+  }
+
+  if (title.length > 200) {
+    return { error: 'Le titre ne doit pas dépasser 200 caractères' };
+  }
+
+  try {
+    await prisma.task.create({
+      data: {
+        title: title.trim(),
+        completed: false,
+      },
+    });
+
+    // Déclenche la revalidation de la page principale pour mettre à jour la liste
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de l\'ajout de la tâche:', e);
+    return { error: 'Une erreur est survenue lors de l\'ajout de la tâche' };
+  }
+}
+
+/**
+ * Action serveur pour basculer le statut d'une tâche.
+ */
+export async function toggleTaskStatus(id: string, completed: boolean) {
+  try {
+    await prisma.task.update({
+      where: { id },
+      data: { completed },
+    });
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de la mise à jour du statut:', e);
+    return { error: 'Impossible de mettre à jour le statut' };
+  }
+}
 </file>
 
 <file path="src/lib/prisma.ts">
@@ -5234,52 +5470,6 @@ Alors les taches T1 et T2 sont toujours presentes avec leurs statuts respectifs
 }
 </file>
 
-<file path="src/app/page.tsx">
-import prisma from "@/lib/prisma";
-import TaskList from "@/components/TaskList";
-import AddTaskForm from "@/components/AddTaskForm";
-
-/**
- * Page principale de l'application affichant la liste des tâches.
- * Récupère les données côté serveur via Prisma.
- */
-export default async function Home() {
-  // Récupération des tâches triées par date de création (ascendant)
-  const tasks = await prisma.task.findMany({
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
-
-  return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-2xl mx-auto">
-        <header className="mb-10 text-center">
-          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
-            Ma Liste de Tâches
-          </h1>
-          <p className="mt-2 text-lg text-gray-600">
-            Gérez vos activités quotidiennes efficacement.
-          </p>
-        </header>
-
-        <main>
-          {/* Formulaire d'ajout de tâche */}
-          <AddTaskForm />
-
-          {/* Liste des tâches */}
-          <TaskList tasks={tasks} />
-        </main>
-
-        <footer className="mt-12 text-center text-gray-400 text-sm">
-          &copy; {new Date().getFullYear()} Todo List SDD - Propulsé par Next.js & Prisma
-        </footer>
-      </div>
-    </div>
-  );
-}
-</file>
-
 <file path=".gitignore">
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
@@ -5373,6 +5563,52 @@ export default defineConfig({
     url: process.env["DATABASE_URL"] as string,
   },
 });
+</file>
+
+<file path="src/app/page.tsx">
+import prisma from "@/lib/prisma";
+import TaskList from "@/components/TaskList";
+import AddTaskForm from "@/components/AddTaskForm";
+
+/**
+ * Page principale de l'application affichant la liste des tâches.
+ * Récupère les données côté serveur via Prisma.
+ */
+export default async function Home() {
+  // Récupération des tâches triées par date de création (ascendant)
+  const tasks = await prisma.task.findMany({
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-2xl mx-auto">
+        <header className="mb-10 text-center">
+          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
+            Ma Liste de Tâches
+          </h1>
+          <p className="mt-2 text-lg text-gray-600">
+            Gérez vos activités quotidiennes efficacement.
+          </p>
+        </header>
+
+        <main>
+          {/* Formulaire d'ajout de tâche */}
+          <AddTaskForm />
+
+          {/* Liste des tâches */}
+          <TaskList tasks={tasks} />
+        </main>
+
+        <footer className="mt-12 text-center text-gray-400 text-sm">
+          &copy; {new Date().getFullYear()} Todo List SDD - Propulsé par Next.js & Prisma
+        </footer>
+      </div>
+    </div>
+  );
+}
 </file>
 
 </files>
