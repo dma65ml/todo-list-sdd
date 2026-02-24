@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import TaskList from "@/components/TaskList";
+import AddTaskForm from "@/components/AddTaskForm";
 
 /**
  * Page principale de l'application affichant la liste des tâches.
@@ -26,6 +27,10 @@ export default async function Home() {
         </header>
 
         <main>
+          {/* Formulaire d'ajout de tâche */}
+          <AddTaskForm />
+
+          {/* Liste des tâches */}
           <TaskList tasks={tasks} />
         </main>
 

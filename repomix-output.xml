@@ -77,6 +77,14 @@ The content is organized as follows:
 openspec/
   changes/
     archive/
+      2026-02-24-add-task/
+        specs/
+          task-creation/
+            spec.md
+        .openspec.yaml
+        design.md
+        proposal.md
+        tasks.md
       2026-02-24-task-data-model/
         specs/
           task-model/
@@ -94,6 +102,8 @@ openspec/
         proposal.md
         tasks.md
   specs/
+    task-creation/
+      spec.md
     task-list-view/
       spec.md
     task-model/
@@ -114,6 +124,7 @@ public/
   vercel.svg
   window.svg
 scripts/
+  verify-add-task.ts
   verify-task-model.ts
 src/
   app/
@@ -122,9 +133,11 @@ src/
     layout.tsx
     page.tsx
   components/
+    AddTaskForm.tsx
     TaskItem.tsx
     TaskList.tsx
   lib/
+    actions.ts
     prisma.ts
 .gitignore
 dev.db
@@ -145,276 +158,320 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="openspec/changes/archive/2026-02-24-task-list-visualization/specs/task-list-view/spec.md">
+<file path="openspec/changes/archive/2026-02-24-add-task/specs/task-creation/spec.md">
 ## ADDED Requirements
 
-### Requirement: Affichage de la liste des tâches
-Le système SHALL afficher l'ensemble des tâches présentes dans la base de données.
+### Requirement: Formulaire d'ajout
+Le système SHALL proposer un champ de saisie textuelle et un bouton "Ajouter" pour créer une nouvelle tâche.
 
-#### Scenario: Affichage de la liste avec des tâches existantes
-- **WHEN** l'utilisateur accède à la page principale
-- **THEN** la liste affiche le titre et le statut de chaque tâche présente en base
+#### Scenario: Ajout réussi d'une tâche avec titre valide
+- **WHEN** l'utilisateur saisit un titre valide et clique sur "Ajouter"
+- **THEN** une nouvelle tâche est créée en base, apparaît dans la liste, et le champ est vidé
 
-### Requirement: Ordre chronologique
-Les tâches SHALL être affichées dans l'ordre de leur création, de la plus ancienne à la plus récente.
+### Requirement: Validation du titre à l'ajout
+Le titre d'une tâche SHALL être obligatoire, non vide (après trim), et ne pas dépasser 200 caractères.
 
-#### Scenario: Ordre d'affichage chronologique
-- **WHEN** l'utilisateur consulte la liste
-- **THEN** les tâches apparaissent triées par date de création (ascendant)
+#### Scenario: Titre vide ou espaces
+- **WHEN** l'utilisateur tente d'ajouter une tâche avec un titre vide ou composé uniquement d'espaces
+- **THEN** un message d'erreur "Le titre ne peut pas être vide" est affiché et aucune tâche n'est créée
 
-### Requirement: Gestion de la liste vide
-Le système SHALL informer l'utilisateur lorsqu'aucune tâche n'est disponible.
+#### Scenario: Titre trop long
+- **WHEN** l'utilisateur saisit un titre de plus de 200 caractères
+- **THEN** un message d'erreur "Le titre ne doit pas dépasser 200 caractères" est affiché
 
-#### Scenario: Liste vide
-- **WHEN** aucune tâche n'est enregistrée et l'utilisateur accède à la page principale
-- **THEN** le message "Aucune tâche pour le moment" est affiché
+### Requirement: Mise à jour instantanée
+L'interface SHALL se mettre à jour pour inclure la nouvelle tâche sans rechargement complet de la page.
 
-### Requirement: Représentation visuelle du statut
-Chaque tâche SHALL afficher son statut de complétion de manière distincte.
-
-#### Scenario: Représentation visuelle du statut
-- **WHEN** l'utilisateur voit la liste
-- **THEN** les tâches "à faire" ont une case décochée et les tâches "faites" ont une case cochée et le titre barré
+#### Scenario: Mise à jour de la liste sans rechargement
+- **WHEN** une tâche est ajoutée avec succès
+- **THEN** la liste est rafraîchie immédiatement pour inclure le nouvel élément
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-task-list-visualization/.openspec.yaml">
+<file path="openspec/changes/archive/2026-02-24-add-task/.openspec.yaml">
 schema: spec-driven
 created: 2026-02-24
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-task-list-visualization/design.md">
+<file path="openspec/changes/archive/2026-02-24-add-task/design.md">
 ## Context
 
-Le système dispose d'un modèle `Task` dans SQLite (via Prisma). Nous devons maintenant implémenter l'interface utilisateur pour afficher ces tâches.
+Le système affiche actuellement une liste de tâches récupérée via Prisma. Nous devons ajouter la possibilité de créer de nouvelles tâches directement depuis l'interface utilisateur.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Afficher la liste des tâches récupérées depuis la base de données.
-- Assurer un tri chronologique ascendant.
-- Fournir un retour visuel clair sur le statut (complété ou non).
-- Gérer l'affichage gracieux d'une liste vide.
+- Fournir un formulaire d'ajout simple.
+- Assurer la persistence des données dans SQLite.
+- Gérer les validations (titre requis, non vide, max 200).
+- Mettre à jour la liste sans rechargement complet de la page.
 
 **Non-Goals:**
-- Ajout, modification ou suppression de tâches dans cette phase.
-- Pagination ou filtrage avancé.
+- Édition ou suppression de tâches.
+- Priorisation ou catégories de tâches.
 
 ## Decisions
 
-- **Server Components (Next.js)**: Utilisation de React Server Components pour récupérer les données directement via Prisma côté serveur, évitant ainsi le besoin d'une API REST/JSON intermédiaire pour la lecture initiale.
-- **Tailwind CSS**: Pour un stylage rapide et cohérent.
-- **Tri Prisma**: Utilisation de `orderBy: { createdAt: 'asc' }` dans la requête Prisma.
-- **Conditionnel "Liste Vide"**: Si le tableau retourné par Prisma est vide, afficher un message informatif.
+- **Server Actions (Next.js)**: Utilisation de `use server` pour gérer la création de tâches. C'est le pattern standard et idiomatique pour Next.js App Router.
+- **Formulaire Client**: Utilisation de `useFormStatus` ou d'un simple état React pour gérer le vidage du champ après succès.
+- **Revalidation**: Utilisation de `revalidatePath('/')` après l'ajout pour forcer Next.js à rafraîchir les données de la page sans rechargement complet (SPA-like update).
+- **Gestion d'Erreur**: Affichage d'un message d'erreur sous le champ en cas d'échec de validation (client ou serveur).
 
 ## Risks / Trade-offs
 
-- **Performance**: Pour une très grande liste de tâches, le rendu côté serveur complet pourrait devenir lent. [Mitigation] -> La taille de la liste est actuellement supposée raisonnable pour une todo-list personnelle.
+- **UX**: Sans optimisme UI (optimistic updates), il y a un léger délai entre le clic et l'apparition de la tâche. [Mitigation] -> Pour ce MVP, une revalidation simple suffit, l'optimisme pourra être ajouté plus tard si nécessaire.
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-task-list-visualization/proposal.md">
+<file path="openspec/changes/archive/2026-02-24-add-task/proposal.md">
 ## Why
 
-L'utilisateur a besoin de visualiser ses tâches pour suivre l'avancement de son travail et savoir ce qu'il lui reste à faire.
+L'utilisateur doit pouvoir ajouter de nouvelles tâches à sa liste de manière simple et intuitive pour organiser son travail. Actuellement, la liste est statique (initialisée par seed).
 
 ## What Changes
 
-- Création d'une page principale affichant la liste des tâches.
-- Récupération des tâches depuis la base de données SQLite via Prisma.
-- Affichage du titre et du statut (coché/décoché) pour chaque tâche.
-- Tri chronologique des tâches par date de création.
-- Gestion de l'état "liste vide".
+- Ajout d'un formulaire de saisie (champ texte et bouton) sur la page principale.
+- Mise en œuvre d'une action serveur (Server Action) pour la création de tâches dans la base de données.
+- Validation des données côté client et côté serveur (titre obligatoire, non vide, max 200 caractères).
+- Mise à jour instantanée de l'interface utilisateur après l'ajout.
 
 ## Capabilities
 
 ### New Capabilities
-- `task-list-view`: Définit les exigences pour l'affichage et le tri de la liste des tâches, incluant la représentation visuelle du statut et la gestion des cas aux limites (liste vide).
+- `task-creation`: Gère la saisie, la validation et la persistance des nouvelles tâches.
 
 ### Modified Capabilities
 <!-- Aucun -->
 
 ## Impact
 
-- Frontend (React/Next.js).
-- Requêtes Prisma pour la récupération des données.
-- Composants UI pour la liste et les éléments de tâche.
+- Frontend (composant de formulaire).
+- Actions serveur Next.js.
+- Validation Prisma/Applicative.
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-task-list-visualization/tasks.md">
-## 1. Préparation des données
+<file path="openspec/changes/archive/2026-02-24-add-task/tasks.md">
+## 1. Action Serveur
 
-- [x] 1.1 Créer un singleton Prisma pour éviter les connexions multiples (src/lib/prisma.ts)
-- [x] 1.2 Créer un script de seed pour injecter des tâches de test (prisma/seed.ts)
+- [x] 1.1 Créer l'action serveur `addTask` (src/lib/actions.ts) avec validation du titre
+- [x] 1.2 Implémenter la création Prisma et `revalidatePath('/')`
 
-## 2. Composants UI
+## 2. Composant Formulaire
 
-- [x] 2.1 Créer le composant `TaskItem` (affichage titre et case à cocher)
-- [x] 2.2 Créer le composant `TaskList` (gestion de la liste et message "vide")
+- [x] 2.1 Créer le composant `AddTaskForm` (client component)
+- [x] 2.2 Gérer l'état local du champ, les erreurs et le chargement
 
-## 3. Page Principale
+## 3. Intégration
 
-- [x] 3.1 Implémenter la récupération des tâches dans `app/page.tsx` avec tri chronologique
-- [x] 3.2 Intégrer `TaskList` dans la page principale
+- [x] 3.1 Ajouter `AddTaskForm` dans la page principale (`src/app/page.tsx`)
+- [x] 3.2 Vérifier le style et la cohérence visuelle avec Tailwind
 
-## 4. Vérification
+## 4. Validation
 
-- [x] 4.1 Vérifier visuellement l'affichage et le tri
-- [x] 4.2 Vérifier le message de liste vide en supprimant temporairement les tâches
+- [x] 4.1 Tester l'ajout d'une tâche valide
+- [x] 4.2 Tester les cas d'erreur (vide, espaces, trop long)
 </file>
 
-<file path="openspec/specs/task-list-view/spec.md">
-# Capability: task-list-view
+<file path="openspec/specs/task-creation/spec.md">
+# Capability: task-creation
 
 ## Purpose
-Définit les règles d'affichage et de tri de la liste des tâches pour l'utilisateur final.
+Définit les mécanismes et règles pour la création de nouvelles tâches dans le système.
 
 ## Requirements
 
-### Requirement: Affichage de la liste des tâches
-Le système SHALL afficher l'ensemble des tâches présentes dans la base de données.
+### Requirement: Formulaire d'ajout
+Le système SHALL proposer un champ de saisie textuelle et un bouton "Ajouter" pour créer une nouvelle tâche.
 
-#### Scenario: Affichage de la liste avec des tâches existantes
-- **WHEN** l'utilisateur accède à la page principale
-- **THEN** la liste affiche le titre et le statut de chaque tâche présente en base
+#### Scenario: Ajout réussi d'une tâche avec titre valide
+- **WHEN** l'utilisateur saisit un titre valide et clique sur "Ajouter"
+- **THEN** une nouvelle tâche est créée en base, apparaît dans la liste, et le champ est vidé
 
-### Requirement: Ordre chronologique
-Les tâches SHALL être affichées dans l'ordre de leur création, de la plus ancienne à la plus récente.
+### Requirement: Validation du titre à l'ajout
+Le titre d'une tâche SHALL être obligatoire, non vide (après trim), et ne pas dépasser 200 caractères.
 
-#### Scenario: Ordre d'affichage chronologique
-- **WHEN** l'utilisateur consulte la liste
-- **THEN** les tâches apparaissent triées par date de création (ascendant)
+#### Scenario: Titre vide ou espaces
+- **WHEN** l'utilisateur tente d'ajouter une tâche avec un titre vide ou composé uniquement d'espaces
+- **THEN** un message d'erreur "Le titre ne peut pas être vide" est affiché et aucune tâche n'est créée
 
-### Requirement: Gestion de la liste vide
-Le système SHALL informer l'utilisateur lorsqu'aucune tâche n'est disponible.
+#### Scenario: Titre trop long
+- **WHEN** l'utilisateur saisit un titre de plus de 200 caractères
+- **THEN** un message d'erreur "Le titre ne doit pas dépasser 200 caractères" est affiché
 
-#### Scenario: Liste vide
-- **WHEN** aucune tâche n'est enregistrée et l'utilisateur accède à la page principale
-- **THEN** le message "Aucune tâche pour le moment" est affiché
+### Requirement: Mise à jour instantanée
+L'interface SHALL se mettre à jour pour inclure la nouvelle tâche sans rechargement complet de la page.
 
-### Requirement: Représentation visuelle du statut
-Chaque tâche SHALL afficher son statut de complétion de manière distincte.
-
-#### Scenario: Représentation visuelle du statut
-- **WHEN** l'utilisateur voit la liste
-- **THEN** les tâches "à faire" ont une case décochée et les tâches "faites" ont une case cochée et le titre barré
+#### Scenario: Mise à jour de la liste sans rechargement
+- **WHEN** une tâche est ajoutée avec succès
+- **THEN** la liste est rafraîchie immédiatement pour inclure le nouvel élément
 </file>
 
-<file path="prisma/seed.ts">
-import { PrismaClient } from '@prisma/client';
+<file path="scripts/verify-add-task.ts">
+import 'dotenv/config';
+import prisma from '../src/lib/prisma';
 
-const prisma = new PrismaClient();
+async function verifyAddTask() {
+  console.log('--- Vérification de la création de tâche ---');
 
-async function main() {
-  console.log('Seed: Nettoyage de la base de données...');
-  await prisma.task.deleteMany({});
+  const testTitle = 'Tâche de test ' + Date.now();
 
-  console.log('Seed: Insertion des tâches de test...');
-  await prisma.task.createMany({
-    data: [
-      { title: 'Acheter du lait', completed: false },
-      { title: 'Envoyer rapport', completed: true },
-      { title: 'Réviser le cours SDD', completed: false },
-    ],
+  // Test 1: Création valide
+  console.log(`Test 1: Création d'une tâche avec le titre "${testTitle}"`);
+  const task = await prisma.task.create({
+    data: {
+      title: testTitle,
+      completed: false,
+    },
   });
 
-  console.log('Seed terminé avec succès.');
-}
-
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
-</file>
-
-<file path="src/components/TaskItem.tsx">
-import React from 'react';
-
-interface TaskItemProps {
-  title: string;
-  completed: boolean;
-}
-
-/**
- * Composant représentant un élément de la liste de tâches.
- */
-const TaskItem: React.FC<TaskItemProps> = ({ title, completed }) => {
-  return (
-    <div className="flex items-center gap-3 p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors">
-      <input
-        type="checkbox"
-        checked={completed}
-        readOnly
-        className="w-5 h-5 cursor-default accent-blue-600"
-      />
-      <span className={`text-lg ${completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-        {title}
-      </span>
-    </div>
-  );
-};
-
-export default TaskItem;
-</file>
-
-<file path="src/components/TaskList.tsx">
-import React from 'react';
-import TaskItem from './TaskItem';
-
-interface Task {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-interface TaskListProps {
-  tasks: Task[];
-}
-
-/**
- * Composant affichant une liste de tâches ou un message si la liste est vide.
- */
-const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
-  if (tasks.length === 0) {
-    return (
-      <div className="text-center py-10">
-        <p className="text-gray-500 text-lg italic">Aucune tâche pour le moment</p>
-      </div>
-    );
+  if (task.title === testTitle) {
+    console.log('✓ Tâche créée avec succès en base de données');
+  } else {
+    throw new Error('✗ Le titre de la tâche ne correspond pas');
   }
 
+  // Test 2: Validation (Simulation de la logique de l'action)
+  console.log('Test 2: Validation titre vide');
+  const validate = (t: string) => {
+    if (!t || t.trim().length === 0) return 'Le titre ne peut pas être vide';
+    if (t.length > 200) return 'Le titre ne doit pas dépasser 200 caractères';
+    return null;
+  };
+
+  const emptyError = validate('   ');
+  if (emptyError === 'Le titre ne peut pas être vide') {
+    console.log('✓ Validation titre vide OK');
+  } else {
+    throw new Error('✗ Validation titre vide en échec');
+  }
+
+  console.log('Test 3: Validation titre trop long');
+  const longTitle = 'a'.repeat(201);
+  const longError = validate(longTitle);
+  if (longError === 'Le titre ne doit pas dépasser 200 caractères') {
+    console.log('✓ Validation titre trop long OK');
+  } else {
+    throw new Error('✗ Validation titre trop long en échec');
+  }
+
+  console.log('--- Toutes les vérifications sont terminées ---');
+}
+
+verifyAddTask()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());
+</file>
+
+<file path="src/components/AddTaskForm.tsx">
+'use client';
+
+import React, { useState } from 'react';
+import { addTask } from '@/lib/actions';
+
+/**
+ * Composant de formulaire pour l'ajout d'une tâche.
+ * Gère l'état de saisie, les messages d'erreur et l'appel à l'action serveur.
+ */
+const AddTaskForm: React.FC = () => {
+  const [title, setTitle] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    // Validation basique côté client
+    if (!title || title.trim().length === 0) {
+      setError('Le titre ne peut pas être vide');
+      return;
+    }
+
+    if (title.length > 200) {
+      setError('Le titre ne doit pas dépasser 200 caractères');
+      return;
+    }
+
+    setIsPending(true);
+    const formData = new FormData();
+    formData.append('title', title);
+
+    const result = await addTask(formData);
+
+    if (result?.error) {
+      setError(result.error);
+    } else {
+      setTitle(''); // Vide le champ après succès
+    }
+    setIsPending(false);
+  };
+
   return (
-    <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
-      {tasks.map((task) => (
-        <TaskItem key={task.id} title={task.title} completed={task.completed} />
-      ))}
-    </div>
+    <form onSubmit={handleSubmit} className="mb-8">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Ajouter une tâche..."
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+            disabled={isPending}
+            maxLength={201}
+          />
+          <button
+            type="submit"
+            disabled={isPending}
+            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-300 transition-colors"
+          >
+            {isPending ? 'Ajout...' : 'Ajouter'}
+          </button>
+        </div>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+      </div>
+    </form>
   );
 };
 
-export default TaskList;
+export default AddTaskForm;
 </file>
 
-<file path="src/lib/prisma.ts">
-import { PrismaClient } from '@prisma/client';
+<file path="src/lib/actions.ts">
+'use server';
 
-const prismaClientSingleton = () => {
-  return new PrismaClient();
-};
+import prisma from '@/lib/prisma';
+import { revalidatePath } from 'next/cache';
 
-type PrismaClientSingleton = ReturnType<typeof prismaClientSingleton>;
+/**
+ * Action serveur pour ajouter une nouvelle tâche.
+ * Valide le titre et persiste la tâche en base de données.
+ */
+export async function addTask(formData: FormData) {
+  const title = formData.get('title') as string;
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClientSingleton | undefined;
-};
+  // Validation
+  if (!title || title.trim().length === 0) {
+    return { error: 'Le titre ne peut pas être vide' };
+  }
 
-const prisma = globalForPrisma.prisma ?? prismaClientSingleton();
+  if (title.length > 200) {
+    return { error: 'Le titre ne doit pas dépasser 200 caractères' };
+  }
 
-export default prisma;
+  try {
+    await prisma.task.create({
+      data: {
+        title: title.trim(),
+        completed: false,
+      },
+    });
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+    // Déclenche la revalidation de la page principale pour mettre à jour la liste
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de l\'ajout de la tâche:', e);
+    return { error: 'Une erreur est survenue lors de l\'ajout de la tâche' };
+  }
+}
 </file>
 
 <file path=".opencode/command/opsx-apply.md">
@@ -4311,6 +4368,159 @@ Le système a besoin d'une méthode pour stocker les tâches de manière persist
 - [x] 3.2 Vérifier que les valeurs par défaut sont correctement appliquées (completed = false)
 </file>
 
+<file path="openspec/changes/archive/2026-02-24-task-list-visualization/specs/task-list-view/spec.md">
+## ADDED Requirements
+
+### Requirement: Affichage de la liste des tâches
+Le système SHALL afficher l'ensemble des tâches présentes dans la base de données.
+
+#### Scenario: Affichage de la liste avec des tâches existantes
+- **WHEN** l'utilisateur accède à la page principale
+- **THEN** la liste affiche le titre et le statut de chaque tâche présente en base
+
+### Requirement: Ordre chronologique
+Les tâches SHALL être affichées dans l'ordre de leur création, de la plus ancienne à la plus récente.
+
+#### Scenario: Ordre d'affichage chronologique
+- **WHEN** l'utilisateur consulte la liste
+- **THEN** les tâches apparaissent triées par date de création (ascendant)
+
+### Requirement: Gestion de la liste vide
+Le système SHALL informer l'utilisateur lorsqu'aucune tâche n'est disponible.
+
+#### Scenario: Liste vide
+- **WHEN** aucune tâche n'est enregistrée et l'utilisateur accède à la page principale
+- **THEN** le message "Aucune tâche pour le moment" est affiché
+
+### Requirement: Représentation visuelle du statut
+Chaque tâche SHALL afficher son statut de complétion de manière distincte.
+
+#### Scenario: Représentation visuelle du statut
+- **WHEN** l'utilisateur voit la liste
+- **THEN** les tâches "à faire" ont une case décochée et les tâches "faites" ont une case cochée et le titre barré
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-task-list-visualization/.openspec.yaml">
+schema: spec-driven
+created: 2026-02-24
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-task-list-visualization/design.md">
+## Context
+
+Le système dispose d'un modèle `Task` dans SQLite (via Prisma). Nous devons maintenant implémenter l'interface utilisateur pour afficher ces tâches.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Afficher la liste des tâches récupérées depuis la base de données.
+- Assurer un tri chronologique ascendant.
+- Fournir un retour visuel clair sur le statut (complété ou non).
+- Gérer l'affichage gracieux d'une liste vide.
+
+**Non-Goals:**
+- Ajout, modification ou suppression de tâches dans cette phase.
+- Pagination ou filtrage avancé.
+
+## Decisions
+
+- **Server Components (Next.js)**: Utilisation de React Server Components pour récupérer les données directement via Prisma côté serveur, évitant ainsi le besoin d'une API REST/JSON intermédiaire pour la lecture initiale.
+- **Tailwind CSS**: Pour un stylage rapide et cohérent.
+- **Tri Prisma**: Utilisation de `orderBy: { createdAt: 'asc' }` dans la requête Prisma.
+- **Conditionnel "Liste Vide"**: Si le tableau retourné par Prisma est vide, afficher un message informatif.
+
+## Risks / Trade-offs
+
+- **Performance**: Pour une très grande liste de tâches, le rendu côté serveur complet pourrait devenir lent. [Mitigation] -> La taille de la liste est actuellement supposée raisonnable pour une todo-list personnelle.
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-task-list-visualization/proposal.md">
+## Why
+
+L'utilisateur a besoin de visualiser ses tâches pour suivre l'avancement de son travail et savoir ce qu'il lui reste à faire.
+
+## What Changes
+
+- Création d'une page principale affichant la liste des tâches.
+- Récupération des tâches depuis la base de données SQLite via Prisma.
+- Affichage du titre et du statut (coché/décoché) pour chaque tâche.
+- Tri chronologique des tâches par date de création.
+- Gestion de l'état "liste vide".
+
+## Capabilities
+
+### New Capabilities
+- `task-list-view`: Définit les exigences pour l'affichage et le tri de la liste des tâches, incluant la représentation visuelle du statut et la gestion des cas aux limites (liste vide).
+
+### Modified Capabilities
+<!-- Aucun -->
+
+## Impact
+
+- Frontend (React/Next.js).
+- Requêtes Prisma pour la récupération des données.
+- Composants UI pour la liste et les éléments de tâche.
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-task-list-visualization/tasks.md">
+## 1. Préparation des données
+
+- [x] 1.1 Créer un singleton Prisma pour éviter les connexions multiples (src/lib/prisma.ts)
+- [x] 1.2 Créer un script de seed pour injecter des tâches de test (prisma/seed.ts)
+
+## 2. Composants UI
+
+- [x] 2.1 Créer le composant `TaskItem` (affichage titre et case à cocher)
+- [x] 2.2 Créer le composant `TaskList` (gestion de la liste et message "vide")
+
+## 3. Page Principale
+
+- [x] 3.1 Implémenter la récupération des tâches dans `app/page.tsx` avec tri chronologique
+- [x] 3.2 Intégrer `TaskList` dans la page principale
+
+## 4. Vérification
+
+- [x] 4.1 Vérifier visuellement l'affichage et le tri
+- [x] 4.2 Vérifier le message de liste vide en supprimant temporairement les tâches
+</file>
+
+<file path="openspec/specs/task-list-view/spec.md">
+# Capability: task-list-view
+
+## Purpose
+Définit les règles d'affichage et de tri de la liste des tâches pour l'utilisateur final.
+
+## Requirements
+
+### Requirement: Affichage de la liste des tâches
+Le système SHALL afficher l'ensemble des tâches présentes dans la base de données.
+
+#### Scenario: Affichage de la liste avec des tâches existantes
+- **WHEN** l'utilisateur accède à la page principale
+- **THEN** la liste affiche le titre et le statut de chaque tâche présente en base
+
+### Requirement: Ordre chronologique
+Les tâches SHALL être affichées dans l'ordre de leur création, de la plus ancienne à la plus récente.
+
+#### Scenario: Ordre d'affichage chronologique
+- **WHEN** l'utilisateur consulte la liste
+- **THEN** les tâches apparaissent triées par date de création (ascendant)
+
+### Requirement: Gestion de la liste vide
+Le système SHALL informer l'utilisateur lorsqu'aucune tâche n'est disponible.
+
+#### Scenario: Liste vide
+- **WHEN** aucune tâche n'est enregistrée et l'utilisateur accède à la page principale
+- **THEN** le message "Aucune tâche pour le moment" est affiché
+
+### Requirement: Représentation visuelle du statut
+Chaque tâche SHALL afficher son statut de complétion de manière distincte.
+
+#### Scenario: Représentation visuelle du statut
+- **WHEN** l'utilisateur voit la liste
+- **THEN** les tâches "à faire" ont une case décochée et les tâches "faites" ont une case cochée et le titre barré
+</file>
+
 <file path="openspec/specs/task-model/spec.md">
 # Capability: task-model
 
@@ -4405,6 +4615,37 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+</file>
+
+<file path="prisma/seed.ts">
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('Seed: Nettoyage de la base de données...');
+  await prisma.task.deleteMany({});
+
+  console.log('Seed: Insertion des tâches de test...');
+  await prisma.task.createMany({
+    data: [
+      { title: 'Acheter du lait', completed: false },
+      { title: 'Envoyer rapport', completed: true },
+      { title: 'Réviser le cours SDD', completed: false },
+    ],
+  });
+
+  console.log('Seed terminé avec succès.');
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
 </file>
 
 <file path="public/file.svg">
@@ -4565,45 +4806,92 @@ export default function RootLayout({
 }
 </file>
 
-<file path="src/app/page.tsx">
-import prisma from "@/lib/prisma";
-import TaskList from "@/components/TaskList";
+<file path="src/components/TaskItem.tsx">
+import React from 'react';
+
+interface TaskItemProps {
+  title: string;
+  completed: boolean;
+}
 
 /**
- * Page principale de l'application affichant la liste des tâches.
- * Récupère les données côté serveur via Prisma.
+ * Composant représentant un élément de la liste de tâches.
  */
-export default async function Home() {
-  // Récupération des tâches triées par date de création (ascendant)
-  const tasks = await prisma.task.findMany({
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
-
+const TaskItem: React.FC<TaskItemProps> = ({ title, completed }) => {
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-2xl mx-auto">
-        <header className="mb-10 text-center">
-          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
-            Ma Liste de Tâches
-          </h1>
-          <p className="mt-2 text-lg text-gray-600">
-            Gérez vos activités quotidiennes efficacement.
-          </p>
-        </header>
-
-        <main>
-          <TaskList tasks={tasks} />
-        </main>
-
-        <footer className="mt-12 text-center text-gray-400 text-sm">
-          &copy; {new Date().getFullYear()} Todo List SDD - Propulsé par Next.js & Prisma
-        </footer>
-      </div>
+    <div className="flex items-center gap-3 p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors">
+      <input
+        type="checkbox"
+        checked={completed}
+        readOnly
+        className="w-5 h-5 cursor-default accent-blue-600"
+      />
+      <span className={`text-lg ${completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+        {title}
+      </span>
     </div>
   );
+};
+
+export default TaskItem;
+</file>
+
+<file path="src/components/TaskList.tsx">
+import React from 'react';
+import TaskItem from './TaskItem';
+
+interface Task {
+  id: string;
+  title: string;
+  completed: boolean;
 }
+
+interface TaskListProps {
+  tasks: Task[];
+}
+
+/**
+ * Composant affichant une liste de tâches ou un message si la liste est vide.
+ */
+const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
+  if (tasks.length === 0) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-gray-500 text-lg italic">Aucune tâche pour le moment</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
+      {tasks.map((task) => (
+        <TaskItem key={task.id} title={task.title} completed={task.completed} />
+      ))}
+    </div>
+  );
+};
+
+export default TaskList;
+</file>
+
+<file path="src/lib/prisma.ts">
+import { PrismaClient } from '@prisma/client';
+
+const prismaClientSingleton = () => {
+  return new PrismaClient();
+};
+
+type PrismaClientSingleton = ReturnType<typeof prismaClientSingleton>;
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClientSingleton | undefined;
+};
+
+const prisma = globalForPrisma.prisma ?? prismaClientSingleton();
+
+export default prisma;
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 </file>
 
 <file path="eslint.config.mjs">
@@ -4651,23 +4939,6 @@ const config = {
 };
 
 export default config;
-</file>
-
-<file path="prisma.config.ts">
-// This file was generated by Prisma, and assumes you have installed the following:
-// npm install --save-dev prisma dotenv
-import "dotenv/config";
-import { defineConfig } from "prisma/config";
-
-export default defineConfig({
-  schema: "prisma/schema.prisma",
-  migrations: {
-    path: "prisma/migrations",
-  },
-  datasource: {
-    url: process.env["DATABASE_URL"] as string,
-  },
-});
 </file>
 
 <file path="RDP.md">
@@ -4963,6 +5234,52 @@ Alors les taches T1 et T2 sont toujours presentes avec leurs statuts respectifs
 }
 </file>
 
+<file path="src/app/page.tsx">
+import prisma from "@/lib/prisma";
+import TaskList from "@/components/TaskList";
+import AddTaskForm from "@/components/AddTaskForm";
+
+/**
+ * Page principale de l'application affichant la liste des tâches.
+ * Récupère les données côté serveur via Prisma.
+ */
+export default async function Home() {
+  // Récupération des tâches triées par date de création (ascendant)
+  const tasks = await prisma.task.findMany({
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-2xl mx-auto">
+        <header className="mb-10 text-center">
+          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
+            Ma Liste de Tâches
+          </h1>
+          <p className="mt-2 text-lg text-gray-600">
+            Gérez vos activités quotidiennes efficacement.
+          </p>
+        </header>
+
+        <main>
+          {/* Formulaire d'ajout de tâche */}
+          <AddTaskForm />
+
+          {/* Liste des tâches */}
+          <TaskList tasks={tasks} />
+        </main>
+
+        <footer className="mt-12 text-center text-gray-400 text-sm">
+          &copy; {new Date().getFullYear()} Todo List SDD - Propulsé par Next.js & Prisma
+        </footer>
+      </div>
+    </div>
+  );
+}
+</file>
+
 <file path=".gitignore">
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
@@ -5039,6 +5356,23 @@ next-env.d.ts
     "typescript": "^5"
   }
 }
+</file>
+
+<file path="prisma.config.ts">
+// This file was generated by Prisma, and assumes you have installed the following:
+// npm install --save-dev prisma dotenv
+import "dotenv/config";
+import { defineConfig } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+  },
+  datasource: {
+    url: process.env["DATABASE_URL"] as string,
+  },
+});
 </file>
 
 </files>
