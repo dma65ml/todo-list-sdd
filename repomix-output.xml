@@ -85,6 +85,14 @@ openspec/
         design.md
         proposal.md
         tasks.md
+      2026-02-24-delete-task/
+        specs/
+          task-deletion/
+            spec.md
+        .openspec.yaml
+        design.md
+        proposal.md
+        tasks.md
       2026-02-24-task-data-model/
         specs/
           task-model/
@@ -112,6 +120,8 @@ openspec/
   specs/
     task-creation/
       spec.md
+    task-deletion/
+      spec.md
     task-list-view/
       spec.md
     task-model/
@@ -135,6 +145,7 @@ public/
   window.svg
 scripts/
   verify-add-task.ts
+  verify-delete-task.ts
   verify-task-model.ts
   verify-toggle-status.ts
 src/
@@ -169,195 +180,190 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="openspec/changes/archive/2026-02-24-update-task-status/specs/task-status-update/spec.md">
+<file path="openspec/changes/archive/2026-02-24-delete-task/specs/task-deletion/spec.md">
 ## ADDED Requirements
 
-### Requirement: Modification du statut
-Le système SHALL permettre à l'utilisateur de modifier le statut d'une tâche en cliquant sur sa case à cocher.
+### Requirement: Bouton de suppression
+Chaque tâche SHALL disposer d'un bouton de suppression accessible.
 
-#### Scenario: Marquer une tâche comme faite
-- **WHEN** l'utilisateur coche la case d'une tâche "à faire"
-- **THEN** la case devient cochée, le titre est barré, et le statut est mis à jour à `true` en base de données.
+#### Scenario: Suppression d'une tâche existante
+- **WHEN** l'utilisateur clique sur le bouton de suppression d'une tâche
+- **THEN** la tâche est définitivement retirée de la base de données et disparaît de la liste immédiatement.
 
-#### Scenario: Remettre une tâche à faire
-- **WHEN** l'utilisateur décoche la case d'une tâche "faite"
-- **THEN** la case devient décochée, le titre n'est plus barré, et le statut est mis à jour à `false` en base de données.
+### Requirement: Mise à jour après suppression
+Le système SHALL rafraîchir l'interface utilisateur sans rechargement complet de la page après une suppression.
 
-### Requirement: Persistance du statut
-Le changement de statut SHALL être persistant entre les rechargements de page.
+#### Scenario: Suppressions multiples
+- **WHEN** l'utilisateur supprime plusieurs tâches à la suite
+- **THEN** chaque tâche disparaît instantanément et le nombre de tâches affichées diminue.
 
-#### Scenario: Vérification de la persistance après rechargement
-- **WHEN** l'utilisateur modifie le statut d'une tâche et recharge la page
-- **THEN** la tâche conserve son nouveau statut dans l'interface.
+### Requirement: Gestion du cas "liste vide"
+Le système SHALL afficher un message informatif si la dernière tâche est supprimée.
 
-### Requirement: Mise à jour sans rechargement
-L'interface SHALL refléter le changement de statut immédiatement sans nécessiter un rechargement complet de la page.
+#### Scenario: Suppression de la dernière tâche
+- **WHEN** l'utilisateur supprime l'unique tâche restante
+- **THEN** le message "Aucune tâche pour le moment" apparaît dans la liste.
 
-#### Scenario: Modification multiple
-- **WHEN** l'utilisateur modifie plusieurs tâches séquentiellement
-- **THEN** chaque modification est appliquée et persistée sans flash de rechargement de page.
+### Requirement: Persistance de la suppression
+La suppression SHALL être définitive entre les sessions.
+
+#### Scenario: Persistance après suppression et rechargement
+- **WHEN** une tâche est supprimée et que la page est rechargée
+- **THEN** la tâche supprimée ne réapparaît pas.
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-update-task-status/.openspec.yaml">
+<file path="openspec/changes/archive/2026-02-24-delete-task/.openspec.yaml">
 schema: spec-driven
 created: 2026-02-24
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-update-task-status/design.md">
+<file path="openspec/changes/archive/2026-02-24-delete-task/design.md">
 ## Context
 
-Le système affiche une liste de tâches et permet d'en ajouter de nouvelles. Nous devons maintenant permettre la modification du statut "completed" des tâches existantes.
+Le système actuel permet la création et la mise à jour du statut des tâches. Nous devons maintenant ajouter une fonctionnalité pour supprimer définitivement une tâche.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Permettre de basculer le statut d'une tâche (fait/à faire) via la case à cocher.
-- Persister le changement en base de données.
-- Assurer une mise à jour fluide de l'UI (sans rechargement de page).
+- Ajouter un bouton de suppression intuitif sur chaque tâche.
+- Retirer la tâche de la base de données SQLite via Prisma.
+- Assurer une mise à jour immédiate de l'interface utilisateur.
+- Gérer l'état "liste vide" après suppression.
 
 **Non-Goals:**
-- Éditer le titre de la tâche dans cette phase.
-- Supprimer une tâche.
+- Archivage (soft delete) des tâches.
+- Corbeille de récupération.
 
 ## Decisions
 
-- **Server Action**: Utilisation d'une action serveur `toggleTaskStatus(id: string, completed: boolean)` pour mettre à jour la base de données.
-- **useTransition**: Utilisation du hook `useTransition` dans le composant client `TaskItem` pour gérer le changement de statut de manière asynchrone tout en gardant l'UI réactive.
-- **Revalidation**: Utilisation de `revalidatePath('/')` côté serveur après la mise à jour Prisma pour synchroniser tous les composants.
-- **Stylage conditionnel**: Utilisation de classes Tailwind (`line-through`, `text-gray-400`) basées sur la prop `completed`.
+- **Server Action**: Utilisation d'une action serveur `deleteTask(id: string)` pour la suppression en base.
+- **useTransition**: Utilisation du hook `useTransition` dans `TaskItem` pour une suppression fluide sans rechargement de page.
+- **Revalidation**: `revalidatePath('/')` après la suppression pour mettre à jour la liste et le message "vide".
+- **Icône de suppression**: Utilisation d'une icône simple ou d'un bouton texte "Supprimer" stylisé avec Tailwind (`text-red-500`).
 
 ## Risks / Trade-offs
 
-- **Latence réseau**: [Risk] -> Un délai peut apparaître entre le clic et la mise à jour si la connexion est lente. [Mitigation] -> L'utilisation de `useTransition` permet d'afficher un état de chargement ou de garder l'interaction fluide. L'optimisme UI (Optimistic UI) pourrait être envisagé si la latence devient un problème majeur.
+- **Action destructive**: [Risk] -> Une suppression accidentelle peut survenir. [Mitigation] -> Pour ce MVP, l'action est directe. Une boîte de dialogue de confirmation pourrait être ajoutée dans une itération future.
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-update-task-status/proposal.md">
+<file path="openspec/changes/archive/2026-02-24-delete-task/proposal.md">
 ## Why
 
-L'utilisateur doit pouvoir marquer une tâche comme terminée ou la remettre à faire pour suivre l'avancement de ses activités. Actuellement, le statut est statique après la création.
+L'utilisateur doit pouvoir supprimer les tâches dont il n'a plus besoin afin de maintenir une liste propre et pertinente.
 
 ## What Changes
 
-- Possibilité de cliquer sur la case à cocher d'une tâche pour basculer son statut.
-- Mise en œuvre d'une action serveur (Server Action) pour mettre à jour le statut dans la base de données SQLite via Prisma.
-- Mise à jour instantanée de l'interface utilisateur sans rechargement de page.
-- Persistance du statut entre les sessions.
+- Ajout d'un bouton de suppression sur chaque élément de tâche (`TaskItem`).
+- Mise en œuvre d'une action serveur (Server Action) pour supprimer la tâche de la base de données SQLite via Prisma.
+- Mise à jour immédiate de l'interface utilisateur après suppression.
+- Affichage automatique du message "Aucune tâche pour le moment" si la liste devient vide.
 
 ## Capabilities
 
 ### New Capabilities
-- `task-status-update`: Gère le basculement du statut "completed" d'une tâche, sa persistance et le retour visuel immédiat.
+- `task-deletion`: Gère le retrait définitif d'une tâche de la liste et de la base de données.
 
 ### Modified Capabilities
 <!-- Aucun -->
 
 ## Impact
 
-- Frontend (Composant TaskItem).
+- Frontend (Composant TaskItem, composant TaskList).
 - Actions serveur Next.js.
-- Base de données SQLite (mise à jour via Prisma).
+- Base de données SQLite (Prisma).
 </file>
 
-<file path="openspec/changes/archive/2026-02-24-update-task-status/tasks.md">
+<file path="openspec/changes/archive/2026-02-24-delete-task/tasks.md">
 ## 1. Action Serveur
 
-- [x] 1.1 Créer l'action serveur `toggleTaskStatus` dans `src/lib/actions.ts`
-- [x] 1.2 Implémenter la mise à jour Prisma et `revalidatePath('/')`
+- [x] 1.1 Créer l'action serveur `deleteTask` dans `src/lib/actions.ts`
+- [x] 1.2 Implémenter la suppression Prisma par ID et `revalidatePath('/')`
 
-## 2. Composants UI
+## 2. Interface Utilisateur
 
-- [x] 2.1 Transformer `TaskItem` en composant client (`'use client'`)
-- [x] 2.2 Ajouter le hook `useTransition` pour gérer le changement de statut
-- [x] 2.3 Connecter l'input checkbox à l'action `toggleTaskStatus`
-- [x] 2.4 Vérifier le stylage conditionnel (titre barré)
+- [x] 2.1 Ajouter un bouton de suppression dans le composant `TaskItem`
+- [x] 2.2 Utiliser `useTransition` pour gérer la suppression de manière asynchrone
+- [x] 2.3 Styliser le bouton avec Tailwind (couleur rouge, icône ou texte)
 
 ## 3. Vérification
 
-- [x] 3.1 Tester le basculement du statut sur plusieurs tâches
-- [x] 3.2 Vérifier la persistance après rechargement de la page
-- [x] 3.3 S'assurer qu'aucun rechargement de page visible ne se produit
+- [x] 3.1 Tester la suppression d'une tâche et vérifier le retrait en base
+- [x] 3.2 Vérifier l'affichage du message "Aucune tâche" après suppression de la dernière tâche
+- [x] 3.3 Valider le build final
 </file>
 
-<file path="openspec/specs/task-status-update/spec.md">
-# Capability: task-status-update
+<file path="openspec/specs/task-deletion/spec.md">
+# Capability: task-deletion
 
 ## Purpose
-Définit les règles et comportements pour la modification du statut de complétion d'une tâche.
+Définit les mécanismes et règles pour la suppression définitive de tâches de la liste.
 
 ## Requirements
 
-### Requirement: Modification du statut
-Le système SHALL permettre à l'utilisateur de modifier le statut d'une tâche en cliquant sur sa case à cocher.
+### Requirement: Bouton de suppression
+Chaque tâche SHALL disposer d'un bouton de suppression accessible.
 
-#### Scenario: Marquer une tâche comme faite
-- **WHEN** l'utilisateur coche la case d'une tâche "à faire"
-- **THEN** la case devient cochée, le titre est barré, et le statut est mis à jour à `true` en base de données.
+#### Scenario: Suppression d'une tâche existante
+- **WHEN** l'utilisateur clique sur le bouton de suppression d'une tâche
+- **THEN** la tâche est définitivement retirée de la base de données et disparaît de la liste immédiatement.
 
-#### Scenario: Remettre une tâche à faire
-- **WHEN** l'utilisateur décoche la case d'une tâche "faite"
-- **THEN** la case devient décochée, le titre n'est plus barré, et le statut est mis à jour à `false` en base de données.
+### Requirement: Mise à jour après suppression
+Le système SHALL rafraîchir l'interface utilisateur sans rechargement complet de la page après une suppression.
 
-### Requirement: Persistance du statut
-Le changement de statut SHALL être persistant entre les rechargements de page.
+#### Scenario: Suppressions multiples
+- **WHEN** l'utilisateur supprime plusieurs tâches à la suite
+- **THEN** chaque tâche disparaît instantanément et le nombre de tâches affichées diminue.
 
-#### Scenario: Vérification de la persistance après rechargement
-- **WHEN** l'utilisateur modifie le statut d'une tâche et recharge la page
-- **THEN** la tâche conserve son nouveau statut dans l'interface.
+### Requirement: Gestion du cas "liste vide"
+Le système SHALL afficher un message informatif si la dernière tâche est supprimée.
 
-### Requirement: Mise à jour sans rechargement
-L'interface SHALL refléter le changement de statut immédiatement sans nécessiter un rechargement complet de la page.
+#### Scenario: Suppression de la dernière tâche
+- **WHEN** l'utilisateur numériquement supprime l'unique tâche restante
+- **THEN** le message "Aucune tâche pour le moment" apparaît dans la liste.
 
-#### Scenario: Modification multiple
-- **WHEN** l'utilisateur modifie plusieurs tâches séquentiellement
-- **THEN** chaque modification est appliquée et persistée sans flash de rechargement de page.
+### Requirement: Persistance de la suppression
+La suppression SHALL être définitive entre les sessions.
+
+#### Scenario: Persistance après suppression et rechargement
+- **WHEN** une tâche est supprimée et que la page est rechargée
+- **THEN** la tâche supprimée ne réapparaît pas.
 </file>
 
-<file path="scripts/verify-toggle-status.ts">
+<file path="scripts/verify-delete-task.ts">
 import 'dotenv/config';
 import prisma from '../src/lib/prisma';
 
-async function verifyToggleStatus() {
-  console.log('--- Vérification de la modification du statut ---');
+async function verifyDeleteTask() {
+  console.log('--- Vérification de la suppression de tâche ---');
 
-  // 1. Trouver une tâche existante
-  const tasks = await prisma.task.findMany({ take: 1 });
-  if (tasks.length === 0) {
-    throw new Error('Aucune tâche trouvée pour le test. Lancez le seed.');
-  }
-
-  const task = tasks[0];
-  const originalStatus = task.completed;
-  const targetStatus = !originalStatus;
-
-  console.log(`Tâche cible: "${task.title}" (ID: ${task.id})`);
-  console.log(`Statut original: ${originalStatus} -> Cible: ${targetStatus}`);
-
-  // 2. Simuler la mise à jour (comme dans l'action toggleTaskStatus)
-  await prisma.task.update({
-    where: { id: task.id },
-    data: { completed: targetStatus },
+  // 1. Créer une tâche temporaire
+  const title = 'Tâche temporaire à supprimer';
+  const task = await prisma.task.create({
+    data: { title, completed: false },
   });
+  console.log(`✓ Tâche créée: "${title}" (ID: ${task.id})`);
+
+  // 2. Supprimer la tâche
+  await prisma.task.delete({
+    where: { id: task.id },
+  });
+  console.log('✓ Appel de suppression Prisma effectué');
 
   // 3. Vérifier en base
-  const updatedTask = await prisma.task.findUnique({ where: { id: task.id } });
-  
-  if (updatedTask?.completed === targetStatus) {
-    console.log('✓ Statut mis à jour avec succès en base de données');
-  } else {
-    throw new Error('✗ Échec de la mise à jour du statut en base');
-  }
-
-  // 4. Remettre le statut original (nettoyage optionnel)
-  await prisma.task.update({
+  const deletedTask = await prisma.task.findUnique({
     where: { id: task.id },
-    data: { completed: originalStatus },
   });
-  console.log('✓ Statut original restauré');
+
+  if (!deletedTask) {
+    console.log('✓ La tâche n\'existe plus en base de données');
+  } else {
+    throw new Error('✗ La tâche existe toujours après suppression');
+  }
 
   console.log('--- Toutes les vérifications sont terminées ---');
 }
 
-verifyToggleStatus()
+verifyDeleteTask()
   .catch(console.error)
   .finally(() => prisma.$disconnect());
 </file>
@@ -4484,6 +4490,115 @@ L'utilisateur a besoin de visualiser ses tâches pour suivre l'avancement de son
 - [x] 4.2 Vérifier le message de liste vide en supprimant temporairement les tâches
 </file>
 
+<file path="openspec/changes/archive/2026-02-24-update-task-status/specs/task-status-update/spec.md">
+## ADDED Requirements
+
+### Requirement: Modification du statut
+Le système SHALL permettre à l'utilisateur de modifier le statut d'une tâche en cliquant sur sa case à cocher.
+
+#### Scenario: Marquer une tâche comme faite
+- **WHEN** l'utilisateur coche la case d'une tâche "à faire"
+- **THEN** la case devient cochée, le titre est barré, et le statut est mis à jour à `true` en base de données.
+
+#### Scenario: Remettre une tâche à faire
+- **WHEN** l'utilisateur décoche la case d'une tâche "faite"
+- **THEN** la case devient décochée, le titre n'est plus barré, et le statut est mis à jour à `false` en base de données.
+
+### Requirement: Persistance du statut
+Le changement de statut SHALL être persistant entre les rechargements de page.
+
+#### Scenario: Vérification de la persistance après rechargement
+- **WHEN** l'utilisateur modifie le statut d'une tâche et recharge la page
+- **THEN** la tâche conserve son nouveau statut dans l'interface.
+
+### Requirement: Mise à jour sans rechargement
+L'interface SHALL refléter le changement de statut immédiatement sans nécessiter un rechargement complet de la page.
+
+#### Scenario: Modification multiple
+- **WHEN** l'utilisateur modifie plusieurs tâches séquentiellement
+- **THEN** chaque modification est appliquée et persistée sans flash de rechargement de page.
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-update-task-status/.openspec.yaml">
+schema: spec-driven
+created: 2026-02-24
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-update-task-status/design.md">
+## Context
+
+Le système affiche une liste de tâches et permet d'en ajouter de nouvelles. Nous devons maintenant permettre la modification du statut "completed" des tâches existantes.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Permettre de basculer le statut d'une tâche (fait/à faire) via la case à cocher.
+- Persister le changement en base de données.
+- Assurer une mise à jour fluide de l'UI (sans rechargement de page).
+
+**Non-Goals:**
+- Éditer le titre de la tâche dans cette phase.
+- Supprimer une tâche.
+
+## Decisions
+
+- **Server Action**: Utilisation d'une action serveur `toggleTaskStatus(id: string, completed: boolean)` pour mettre à jour la base de données.
+- **useTransition**: Utilisation du hook `useTransition` dans le composant client `TaskItem` pour gérer le changement de statut de manière asynchrone tout en gardant l'UI réactive.
+- **Revalidation**: Utilisation de `revalidatePath('/')` côté serveur après la mise à jour Prisma pour synchroniser tous les composants.
+- **Stylage conditionnel**: Utilisation de classes Tailwind (`line-through`, `text-gray-400`) basées sur la prop `completed`.
+
+## Risks / Trade-offs
+
+- **Latence réseau**: [Risk] -> Un délai peut apparaître entre le clic et la mise à jour si la connexion est lente. [Mitigation] -> L'utilisation de `useTransition` permet d'afficher un état de chargement ou de garder l'interaction fluide. L'optimisme UI (Optimistic UI) pourrait être envisagé si la latence devient un problème majeur.
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-update-task-status/proposal.md">
+## Why
+
+L'utilisateur doit pouvoir marquer une tâche comme terminée ou la remettre à faire pour suivre l'avancement de ses activités. Actuellement, le statut est statique après la création.
+
+## What Changes
+
+- Possibilité de cliquer sur la case à cocher d'une tâche pour basculer son statut.
+- Mise en œuvre d'une action serveur (Server Action) pour mettre à jour le statut dans la base de données SQLite via Prisma.
+- Mise à jour instantanée de l'interface utilisateur sans rechargement de page.
+- Persistance du statut entre les sessions.
+
+## Capabilities
+
+### New Capabilities
+- `task-status-update`: Gère le basculement du statut "completed" d'une tâche, sa persistance et le retour visuel immédiat.
+
+### Modified Capabilities
+<!-- Aucun -->
+
+## Impact
+
+- Frontend (Composant TaskItem).
+- Actions serveur Next.js.
+- Base de données SQLite (mise à jour via Prisma).
+</file>
+
+<file path="openspec/changes/archive/2026-02-24-update-task-status/tasks.md">
+## 1. Action Serveur
+
+- [x] 1.1 Créer l'action serveur `toggleTaskStatus` dans `src/lib/actions.ts`
+- [x] 1.2 Implémenter la mise à jour Prisma et `revalidatePath('/')`
+
+## 2. Composants UI
+
+- [x] 2.1 Transformer `TaskItem` en composant client (`'use client'`)
+- [x] 2.2 Ajouter le hook `useTransition` pour gérer le changement de statut
+- [x] 2.3 Connecter l'input checkbox à l'action `toggleTaskStatus`
+- [x] 2.4 Vérifier le stylage conditionnel (titre barré)
+
+## 3. Vérification
+
+- [x] 3.1 Tester le basculement du statut sur plusieurs tâches
+- [x] 3.2 Vérifier la persistance après rechargement de la page
+- [x] 3.3 S'assurer qu'aucun rechargement de page visible ne se produit
+</file>
+
 <file path="openspec/specs/task-creation/spec.md">
 # Capability: task-creation
 
@@ -4587,6 +4702,40 @@ Une nouvelle tâche SHALL avoir le statut "à faire" (false) par défaut.
 #### Scenario: Initialisation du statut
 - **WHEN** une tâche est créée sans spécifier le statut
 - **THEN** le champ `completed` est initialisé à `false`
+</file>
+
+<file path="openspec/specs/task-status-update/spec.md">
+# Capability: task-status-update
+
+## Purpose
+Définit les règles et comportements pour la modification du statut de complétion d'une tâche.
+
+## Requirements
+
+### Requirement: Modification du statut
+Le système SHALL permettre à l'utilisateur de modifier le statut d'une tâche en cliquant sur sa case à cocher.
+
+#### Scenario: Marquer une tâche comme faite
+- **WHEN** l'utilisateur coche la case d'une tâche "à faire"
+- **THEN** la case devient cochée, le titre est barré, et le statut est mis à jour à `true` en base de données.
+
+#### Scenario: Remettre une tâche à faire
+- **WHEN** l'utilisateur décoche la case d'une tâche "faite"
+- **THEN** la case devient décochée, le titre n'est plus barré, et le statut est mis à jour à `false` en base de données.
+
+### Requirement: Persistance du statut
+Le changement de statut SHALL être persistant entre les rechargements de page.
+
+#### Scenario: Vérification de la persistance après rechargement
+- **WHEN** l'utilisateur modifie le statut d'une tâche et recharge la page
+- **THEN** la tâche conserve son nouveau statut dans l'interface.
+
+### Requirement: Mise à jour sans rechargement
+L'interface SHALL refléter le changement de statut immédiatement sans nécessiter un rechargement complet de la page.
+
+#### Scenario: Modification multiple
+- **WHEN** l'utilisateur modifie plusieurs tâches séquentiellement
+- **THEN** chaque modification est appliquée et persistée sans flash de rechargement de page.
 </file>
 
 <file path="openspec/config.yaml">
@@ -4830,6 +4979,56 @@ main()
   });
 </file>
 
+<file path="scripts/verify-toggle-status.ts">
+import 'dotenv/config';
+import prisma from '../src/lib/prisma';
+
+async function verifyToggleStatus() {
+  console.log('--- Vérification de la modification du statut ---');
+
+  // 1. Trouver une tâche existante
+  const tasks = await prisma.task.findMany({ take: 1 });
+  if (tasks.length === 0) {
+    throw new Error('Aucune tâche trouvée pour le test. Lancez le seed.');
+  }
+
+  const task = tasks[0];
+  const originalStatus = task.completed;
+  const targetStatus = !originalStatus;
+
+  console.log(`Tâche cible: "${task.title}" (ID: ${task.id})`);
+  console.log(`Statut original: ${originalStatus} -> Cible: ${targetStatus}`);
+
+  // 2. Simuler la mise à jour (comme dans l'action toggleTaskStatus)
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { completed: targetStatus },
+  });
+
+  // 3. Vérifier en base
+  const updatedTask = await prisma.task.findUnique({ where: { id: task.id } });
+  
+  if (updatedTask?.completed === targetStatus) {
+    console.log('✓ Statut mis à jour avec succès en base de données');
+  } else {
+    throw new Error('✗ Échec de la mise à jour du statut en base');
+  }
+
+  // 4. Remettre le statut original (nettoyage optionnel)
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { completed: originalStatus },
+  });
+  console.log('✓ Statut original restauré');
+
+  console.log('--- Toutes les vérifications sont terminées ---');
+}
+
+verifyToggleStatus()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());
+</file>
+
 <file path="src/app/globals.css">
 @import "tailwindcss";
 
@@ -4968,146 +5167,6 @@ const AddTaskForm: React.FC = () => {
 };
 
 export default AddTaskForm;
-</file>
-
-<file path="src/components/TaskItem.tsx">
-'use client';
-
-import React, { useTransition } from 'react';
-import { toggleTaskStatus } from '@/lib/actions';
-
-interface TaskItemProps {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-/**
- * Composant représentant un élément de la liste de tâches.
- * Gère le basculement du statut via une Server Action.
- */
-const TaskItem: React.FC<TaskItemProps> = ({ id, title, completed }) => {
-  const [isPending, startTransition] = useTransition();
-
-  const handleToggle = () => {
-    startTransition(async () => {
-      await toggleTaskStatus(id, !completed);
-    });
-  };
-
-  return (
-    <div className={`flex items-center gap-3 p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${isPending ? 'opacity-50' : ''}`}>
-      <input
-        type="checkbox"
-        checked={completed}
-        onChange={handleToggle}
-        disabled={isPending}
-        className="w-5 h-5 cursor-pointer accent-blue-600 disabled:cursor-not-allowed"
-      />
-      <span className={`text-lg ${completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-        {title}
-      </span>
-    </div>
-  );
-};
-
-export default TaskItem;
-</file>
-
-<file path="src/components/TaskList.tsx">
-import React from 'react';
-import TaskItem from './TaskItem';
-
-interface Task {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-interface TaskListProps {
-  tasks: Task[];
-}
-
-/**
- * Composant affichant une liste de tâches ou un message si la liste est vide.
- */
-const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
-  if (tasks.length === 0) {
-    return (
-      <div className="text-center py-10">
-        <p className="text-gray-500 text-lg italic">Aucune tâche pour le moment</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
-      {tasks.map((task) => (
-        <TaskItem key={task.id} id={task.id} title={task.title} completed={task.completed} />
-      ))}
-    </div>
-  );
-};
-
-export default TaskList;
-</file>
-
-<file path="src/lib/actions.ts">
-'use server';
-
-import prisma from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
-
-/**
- * Action serveur pour ajouter une nouvelle tâche.
- * Valide le titre et persiste la tâche en base de données.
- */
-export async function addTask(formData: FormData) {
-  const title = formData.get('title') as string;
-
-  // Validation
-  if (!title || title.trim().length === 0) {
-    return { error: 'Le titre ne peut pas être vide' };
-  }
-
-  if (title.length > 200) {
-    return { error: 'Le titre ne doit pas dépasser 200 caractères' };
-  }
-
-  try {
-    await prisma.task.create({
-      data: {
-        title: title.trim(),
-        completed: false,
-      },
-    });
-
-    // Déclenche la revalidation de la page principale pour mettre à jour la liste
-    revalidatePath('/');
-    return { success: true };
-  } catch (e) {
-    console.error('Erreur lors de l\'ajout de la tâche:', e);
-    return { error: 'Une erreur est survenue lors de l\'ajout de la tâche' };
-  }
-}
-
-/**
- * Action serveur pour basculer le statut d'une tâche.
- */
-export async function toggleTaskStatus(id: string, completed: boolean) {
-  try {
-    await prisma.task.update({
-      where: { id },
-      data: { completed },
-    });
-
-    revalidatePath('/');
-    return { success: true };
-  } catch (e) {
-    console.error('Erreur lors de la mise à jour du statut:', e);
-    return { error: 'Impossible de mettre à jour le statut' };
-  }
-}
 </file>
 
 <file path="src/lib/prisma.ts">
@@ -5467,6 +5526,179 @@ Alors les taches T1 et T2 sont toujours presentes avec leurs statuts respectifs
     "**/*.mts"
   ],
   "exclude": ["node_modules"]
+}
+</file>
+
+<file path="src/components/TaskItem.tsx">
+'use client';
+
+import React, { useTransition } from 'react';
+import { toggleTaskStatus, deleteTask } from '@/lib/actions';
+
+interface TaskItemProps {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+/**
+ * Composant représentant un élément de la liste de tâches.
+ * Gère le basculement du statut et la suppression via des Server Actions.
+ */
+const TaskItem: React.FC<TaskItemProps> = ({ id, title, completed }) => {
+  const [isPending, startTransition] = useTransition();
+
+  const handleToggle = () => {
+    startTransition(async () => {
+      await toggleTaskStatus(id, !completed);
+    });
+  };
+
+  const handleDelete = () => {
+    startTransition(async () => {
+      await deleteTask(id);
+    });
+  };
+
+  return (
+    <div className={`flex items-center justify-between p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${isPending ? 'opacity-50' : ''}`}>
+      <div className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={completed}
+          onChange={handleToggle}
+          disabled={isPending}
+          className="w-5 h-5 cursor-pointer accent-blue-600 disabled:cursor-not-allowed"
+        />
+        <span className={`text-lg ${completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+          {title}
+        </span>
+      </div>
+      <button
+        onClick={handleDelete}
+        disabled={isPending}
+        className="text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded transition-colors disabled:text-red-300"
+        title="Supprimer la tâche"
+      >
+        Supprimer
+      </button>
+    </div>
+  );
+};
+
+export default TaskItem;
+</file>
+
+<file path="src/components/TaskList.tsx">
+import React from 'react';
+import TaskItem from './TaskItem';
+
+interface Task {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+interface TaskListProps {
+  tasks: Task[];
+}
+
+/**
+ * Composant affichant une liste de tâches ou un message si la liste est vide.
+ */
+const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
+  if (tasks.length === 0) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-gray-500 text-lg italic">Aucune tâche pour le moment</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
+      {tasks.map((task) => (
+        <TaskItem key={task.id} id={task.id} title={task.title} completed={task.completed} />
+      ))}
+    </div>
+  );
+};
+
+export default TaskList;
+</file>
+
+<file path="src/lib/actions.ts">
+'use server';
+
+import prisma from '@/lib/prisma';
+import { revalidatePath } from 'next/cache';
+
+/**
+ * Action serveur pour ajouter une nouvelle tâche.
+ * Valide le titre et persiste la tâche en base de données.
+ */
+export async function addTask(formData: FormData) {
+  const title = formData.get('title') as string;
+
+  // Validation
+  if (!title || title.trim().length === 0) {
+    return { error: 'Le titre ne peut pas être vide' };
+  }
+
+  if (title.length > 200) {
+    return { error: 'Le titre ne doit pas dépasser 200 caractères' };
+  }
+
+  try {
+    await prisma.task.create({
+      data: {
+        title: title.trim(),
+        completed: false,
+      },
+    });
+
+    // Déclenche la revalidation de la page principale pour mettre à jour la liste
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de l\'ajout de la tâche:', e);
+    return { error: 'Une erreur est survenue lors de l\'ajout de la tâche' };
+  }
+}
+
+/**
+ * Action serveur pour basculer le statut d'une tâche.
+ */
+export async function toggleTaskStatus(id: string, completed: boolean) {
+  try {
+    await prisma.task.update({
+      where: { id },
+      data: { completed },
+    });
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de la mise à jour du statut:', e);
+    return { error: 'Impossible de mettre à jour le statut' };
+  }
+}
+
+/**
+ * Action serveur pour supprimer une tâche.
+ */
+export async function deleteTask(id: string) {
+  try {
+    await prisma.task.delete({
+      where: { id },
+    });
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de la suppression de la tâche:', e);
+    return { error: 'Impossible de supprimer la tâche' };
+  }
 }
 </file>
 

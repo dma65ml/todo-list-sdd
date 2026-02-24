@@ -53,3 +53,20 @@ export async function toggleTaskStatus(id: string, completed: boolean) {
     return { error: 'Impossible de mettre à jour le statut' };
   }
 }
+
+/**
+ * Action serveur pour supprimer une tâche.
+ */
+export async function deleteTask(id: string) {
+  try {
+    await prisma.task.delete({
+      where: { id },
+    });
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (e) {
+    console.error('Erreur lors de la suppression de la tâche:', e);
+    return { error: 'Impossible de supprimer la tâche' };
+  }
+}
